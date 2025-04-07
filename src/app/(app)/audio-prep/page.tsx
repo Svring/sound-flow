@@ -22,6 +22,7 @@ export default function AudioPrepPage() {
   const [showFileBrowser, setShowFileBrowser] = useState(false);
   const [fetchCooldown, setFetchCooldown] = useState(false);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
+  const [allowDirSelect, setAllowDirSelect] = useState(false);
   
   // Use a ref to keep track of the timer
   const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -98,9 +99,9 @@ export default function AudioPrepPage() {
   // UVR5 state
   const [uvr5State, setUvr5State] = useState<GsModel.GsUVR5Request>({
     model_name: "HP3",
-    input_path: "",
-    output_dir_vocals: "output/uvr5_vocals",
-    output_dir_instrumental: "output/uvr5_inst",
+    input_path: "api/audio_separation_uvr5/input_audio",
+    output_dir_vocals: "api/audio_separation_uvr5/output_vocal",
+    output_dir_instrumental: "api/audio_separation_uvr5/output_instrumental",
     aggressiveness: 10,
     output_format: "wav",
     device: "cuda",
@@ -161,13 +162,14 @@ export default function AudioPrepPage() {
   };
 
   // Open file browser for a specific field
-  const openFileBrowser = (fieldName: string, directory: string = "", extensions: string[] = []) => {
+  const openFileBrowser = (fieldName: string, directory: string = "", extensions: string[] = [], allowDirSelect: boolean = false) => {
     setFileBrowserConfig({
       targetField: fieldName,
       directory,
       allowedExtensions: extensions
     });
     setShowFileBrowser(true);
+    setAllowDirSelect(allowDirSelect);
   };
 
   // Handle UVR5 request
@@ -257,6 +259,7 @@ export default function AudioPrepPage() {
     browseDir?: string;
     extensions?: string[];
     placeholder?: string;
+    allowDirectorySelection?: boolean;
   }
 
   const FileInputWithBrowse = ({ 
@@ -266,7 +269,8 @@ export default function AudioPrepPage() {
     browseField, 
     browseDir = "",
     extensions = [],
-    placeholder = "Select a file or directory" 
+    placeholder = "Select a file or directory",
+    allowDirectorySelection = false
   }: FileInputWithBrowseProps) => (
     <div className="grid gap-3">
       <Label htmlFor={browseField}>{label}</Label>
@@ -281,7 +285,7 @@ export default function AudioPrepPage() {
         <Button 
           type="button" 
           variant="secondary" 
-          onClick={() => openFileBrowser(browseField, browseDir, extensions)}
+          onClick={() => openFileBrowser(browseField, browseDir, extensions, allowDirectorySelection)}
         >
           <FileUp className="h-4 w-4 mr-2" />
           Browse
@@ -312,7 +316,9 @@ export default function AudioPrepPage() {
           <CardHeader>
             <CardTitle>File Browser</CardTitle>
             <CardDescription>
-              Select a file or navigate through directories
+              {allowDirSelect 
+                ? "Navigate through directories and use the 'Select Folder' button to choose a folder" 
+                : "Select a file or navigate through directories"}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -320,6 +326,7 @@ export default function AudioPrepPage() {
               onFileSelect={handleFileSelect}
               allowedExtensions={fileBrowserConfig.allowedExtensions}
               startDirectory={fileBrowserConfig.directory}
+              allowDirectorySelection={allowDirSelect}
             />
             <div className="flex justify-end mt-4">
               <Button variant="outline" onClick={() => setShowFileBrowser(false)}>
@@ -366,6 +373,7 @@ export default function AudioPrepPage() {
                     value={uvr5State.input_path}
                     onChange={(e: ChangeEvent<HTMLInputElement>) => setUvr5State({ ...uvr5State, input_path: e.target.value })}
                     browseField="uvr5.input_path"
+                    browseDir="api/audio_separation_uvr5"
                     extensions={['.wav', '.mp3', '.flac', '.m4a']}
                     placeholder="test/example.mp3"
                   />
@@ -436,7 +444,8 @@ export default function AudioPrepPage() {
                       value={uvr5State.output_dir_vocals}
                       onChange={(e: ChangeEvent<HTMLInputElement>) => setUvr5State({ ...uvr5State, output_dir_vocals: e.target.value })}
                       browseField="uvr5.output_dir_vocals"
-                      browseDir="output"
+                      browseDir="api/audio_separation_uvr5"
+                      allowDirectorySelection={true}
                     />
                     
                     <FileInputWithBrowse
@@ -444,7 +453,8 @@ export default function AudioPrepPage() {
                       value={uvr5State.output_dir_instrumental}
                       onChange={(e: ChangeEvent<HTMLInputElement>) => setUvr5State({ ...uvr5State, output_dir_instrumental: e.target.value })}
                       browseField="uvr5.output_dir_instrumental"
-                      browseDir="output"
+                      browseDir="api/audio_separation_uvr5"
+                      allowDirectorySelection={true}
                     />
                   </div>
                   
@@ -511,6 +521,7 @@ export default function AudioPrepPage() {
                     value={segmentState.input_audio_path}
                     onChange={(e: ChangeEvent<HTMLInputElement>) => setSegmentState({ ...segmentState, input_audio_path: e.target.value })}
                     browseField="segment.input_audio_path"
+                    browseDir="api/audio_segmentation"
                     extensions={['.wav', '.mp3', '.flac', '.m4a']}
                     placeholder="test/long_audio.wav"
                   />
@@ -520,7 +531,8 @@ export default function AudioPrepPage() {
                     value={segmentState.output_directory}
                     onChange={(e: ChangeEvent<HTMLInputElement>) => setSegmentState({ ...segmentState, output_directory: e.target.value })}
                     browseField="segment.output_directory"
-                    browseDir="output"
+                    browseDir="api/audio_segmentation"
+                    allowDirectorySelection={true}
                   />
                   
                   <div className="grid gap-3">
@@ -634,7 +646,8 @@ export default function AudioPrepPage() {
                     onChange={(e: ChangeEvent<HTMLInputElement>) => setAsrState({ ...asrState, input_audio_path: e.target.value })}
                     browseField="asr.input_audio_path"
                     extensions={['.wav', '.mp3', '.flac', '.m4a']}
-                    placeholder="output/slicer_opt"
+                    placeholder="api/audio_segmentation"
+                    allowDirectorySelection={true}
                   />
                   
                   <FileInputWithBrowse
@@ -642,7 +655,8 @@ export default function AudioPrepPage() {
                     value={asrState.output_directory}
                     onChange={(e: ChangeEvent<HTMLInputElement>) => setAsrState({ ...asrState, output_directory: e.target.value })}
                     browseField="asr.output_directory"
-                    browseDir="output"
+                    browseDir="api/audio_recognition"
+                    allowDirectorySelection={true}
                   />
                   
                   <div className="grid grid-cols-2 gap-4">

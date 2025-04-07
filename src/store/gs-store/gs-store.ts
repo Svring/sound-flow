@@ -1,6 +1,9 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { GsModel } from '@/models'
+import { GsFileModel } from '@/models/gs-model'
+
+const fileModel = new GsFileModel();
 
 // Language options dictionary
 const languageOptions = {
@@ -98,6 +101,8 @@ interface GsState {
   downloadFile: (filePath: string) => Promise<Blob>
   uploadFile: (file: File, destination: string, overwrite?: boolean) => Promise<GsModel.GsUploadFileResponse>
   deleteFile: (filePath: string) => Promise<GsModel.GsDeleteFileResponse>
+  createFolder: (path: string) => Promise<void>
+  createFile: (path: string, content?: string) => Promise<void>
 }
 
 export const useGsStore = create<GsState>()(
@@ -641,6 +646,34 @@ export const useGsStore = create<GsState>()(
             throw error;
           }
           throw new Error('Failed to delete file');
+        }
+      },
+      
+      createFolder: async (path: string) => {
+        try {
+          const response = await fileModel.createFolder(path);
+          if (!response.success) {
+            throw new Error(response.error || 'Failed to create folder');
+          }
+          // Refresh the current directory
+          await get().listFiles({ directory: get().currentDirectory });
+        } catch (error) {
+          console.error('Error creating folder:', error);
+          throw error;
+        }
+      },
+      
+      createFile: async (path: string, content: string = '') => {
+        try {
+          const response = await fileModel.createFile(path, content);
+          if (!response.success) {
+            throw new Error(response.error || 'Failed to create file');
+          }
+          // Refresh the current directory
+          await get().listFiles({ directory: get().currentDirectory });
+        } catch (error) {
+          console.error('Error creating file:', error);
+          throw error;
         }
       }
     }),

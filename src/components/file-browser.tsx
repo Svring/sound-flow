@@ -5,10 +5,12 @@ import { useGsStore } from '@/store/gs-store/gs-store';
 import { GsModel } from '@/models';
 import { 
   Folder, File, ArrowUp, DownloadCloud, Upload, Trash2, 
-  Loader2, Music, FileText, FileImage, Video, Package 
+  Loader2, Music, FileText, FileImage, Video, Package,
+  FolderPlus, FilePlus
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { 
   Table, TableBody, TableCell, TableHead, 
   TableHeader, TableRow 
@@ -24,6 +26,8 @@ interface FileBrowserProps {
   showUploadButton?: boolean;
   showDeleteButton?: boolean;
   showDownloadButton?: boolean;
+  showCreateButton?: boolean;
+  allowDirectorySelection?: boolean;
 }
 
 export function FileBrowser({
@@ -33,6 +37,8 @@ export function FileBrowser({
   showUploadButton = true,
   showDeleteButton = true,
   showDownloadButton = true,
+  showCreateButton = true,
+  allowDirectorySelection = false,
 }: FileBrowserProps) {
   const { 
     currentFiles, 
@@ -43,14 +49,21 @@ export function FileBrowser({
     navigateUp,
     uploadFile,
     downloadFile,
-    deleteFile
+    deleteFile,
+    createFolder,
+    createFile
   } = useGsStore();
 
   const [error, setError] = useState<string | null>(null);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [createFolderDialogOpen, setCreateFolderDialogOpen] = useState(false);
+  const [createFileDialogOpen, setCreateFileDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [overwriteExisting, setOverwriteExisting] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [newFileName, setNewFileName] = useState('');
+  const [newFileContent, setNewFileContent] = useState('');
 
   // Initialize by loading the starting directory
   useEffect(() => {
@@ -91,6 +104,13 @@ export function FileBrowser({
       handleNavigateToDirectory(file.path);
     } else if (onFileSelect) {
       onFileSelect(file.path);
+    }
+  };
+
+  // Handle directory selection
+  const handleDirectorySelect = (path: string) => {
+    if (onFileSelect) {
+      onFileSelect(path);
     }
   };
 
@@ -145,6 +165,39 @@ export function FileBrowser({
     } catch (err) {
       console.error(`Failed to delete file ${filePath}:`, err);
       setError(`Failed to delete file: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  // Handle folder creation
+  const handleCreateFolder = async () => {
+    if (!newFolderName) return;
+    
+    setError(null);
+    try {
+      const folderPath = `${currentDirectory}/${newFolderName}`.replace(/^\/+/, '');
+      await createFolder(folderPath);
+      setCreateFolderDialogOpen(false);
+      setNewFolderName('');
+    } catch (err) {
+      console.error('Failed to create folder:', err);
+      setError(`Failed to create folder: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  // Handle file creation
+  const handleCreateFile = async () => {
+    if (!newFileName) return;
+    
+    setError(null);
+    try {
+      const filePath = `${currentDirectory}/${newFileName}`.replace(/^\/+/, '');
+      await createFile(filePath, newFileContent);
+      setCreateFileDialogOpen(false);
+      setNewFileName('');
+      setNewFileContent('');
+    } catch (err) {
+      console.error('Failed to create file:', err);
+      setError(`Failed to create file: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   };
 
@@ -225,6 +278,30 @@ export function FileBrowser({
           {currentDirectory || '/'}
         </div>
         
+        {showCreateButton && (
+          <>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => setCreateFolderDialogOpen(true)}
+              disabled={loadingFiles}
+            >
+              <FolderPlus className="h-4 w-4 mr-2" />
+              New Folder
+            </Button>
+            
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => setCreateFileDialogOpen(true)}
+              disabled={loadingFiles}
+            >
+              <FilePlus className="h-4 w-4 mr-2" />
+              New File
+            </Button>
+          </>
+        )}
+        
         {showUploadButton && (
           <Button 
             variant="outline" 
@@ -284,6 +361,16 @@ export function FileBrowser({
                       {file.lastModified ? new Date(file.lastModified).toLocaleString() : ''}
                     </TableCell>
                     <TableCell className="text-right space-x-1">
+                      {allowDirectorySelection && file.isDirectory && (
+                        <Button
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => handleDirectorySelect(file.path)}
+                          title="Select Directory"
+                        >
+                          Select Folder
+                        </Button>
+                      )}
                       {!file.isDirectory && showDownloadButton && (
                         <Button
                           variant="ghost" 
@@ -312,6 +399,77 @@ export function FileBrowser({
           </Table>
         </ScrollArea>
       </div>
+      
+      {/* Create Folder Dialog */}
+      <Dialog open={createFolderDialogOpen} onOpenChange={setCreateFolderDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Folder</DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <Input
+              placeholder="Folder name"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+            />
+          </div>
+          
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setCreateFolderDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleCreateFolder}
+              disabled={!newFolderName}
+            >
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Create File Dialog */}
+      <Dialog open={createFileDialogOpen} onOpenChange={setCreateFileDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New File</DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <Input
+              placeholder="File name"
+              value={newFileName}
+              onChange={(e) => setNewFileName(e.target.value)}
+            />
+            
+            <Textarea
+              placeholder="File content (optional)"
+              value={newFileContent}
+              onChange={(e) => setNewFileContent(e.target.value)}
+              rows={5}
+            />
+          </div>
+          
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setCreateFileDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleCreateFile}
+              disabled={!newFileName}
+            >
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       
       {/* Upload Dialog */}
       <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>

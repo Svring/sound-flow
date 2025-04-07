@@ -86,4 +86,75 @@ export const defaultListFilesRequest: GsListFilesRequest = {
   directory: "",
   includeFiles: true,
   includeDirectories: true
-}; 
+};
+
+export interface GsCreateFolderRequest {
+  path: string;
+}
+
+export interface GsCreateFolderResponse {
+  success: boolean;
+  path: string;
+  error?: string;
+}
+
+export interface GsCreateFileRequest {
+  path: string;
+  content?: string;
+}
+
+export interface GsCreateFileResponse {
+  success: boolean;
+  path: string;
+  error?: string;
+}
+
+export class GsFileModel {
+  private baseUrl: string;
+
+  constructor(baseUrl: string = '') {
+    this.baseUrl = baseUrl;
+  }
+
+  async createFolder(path: string): Promise<GsCreateFolderResponse> {
+    try {
+      const response = await fetch(`${this.baseUrl}/files/create-folder`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ path }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to create folder: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error creating folder:', error);
+      throw error;
+    }
+  }
+
+  async createFile(path: string, content: string = ''): Promise<GsCreateFileResponse> {
+    try {
+      const response = await fetch(`${this.baseUrl}/files/create-file`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ path, content }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to create file: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error creating file:', error);
+      throw error;
+    }
+  }
+} 
