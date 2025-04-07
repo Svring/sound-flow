@@ -4,7 +4,9 @@ import Link from 'next/link'
 
 import {
   Calendar, ChevronDown, Home, ChevronsUpDown,
-  Workflow, FishSymbol, Sparkles, AudioLines
+  Workflow, FishSymbol, Sparkles, AudioLines,
+  BookAudio,
+  Component
 } from "lucide-react"
 
 import {
@@ -33,10 +35,20 @@ import { useState } from "react"
 // Menu items.
 const items = [
   {
+    title: "Audio Preprocessing",
+    url: "/audio-prep",
+    icon: BookAudio,
+  },
+  {
+    title: "Model Training",
+    url: "/train",
+    icon: Component,
+  },
+  {
     title: "Text to Speech",
     url: "/tts",
     icon: AudioLines,
-  },
+  }
 ]
 
 // Framework items

@@ -13,4 +13,16 @@ export * from './gs-gpt-weights-model';
 export * from './gs-sovits-weights-model';
 
 // Refer audio model
-export * from './gs-refer-audio-model'; 
+export * from './gs-refer-audio-model';
+
+// UVR5 model (Voice Separation)
+export * from './gs-uvr5-model';
+
+// Audio Segmentation model
+export * from './gs-segment-audio-model';
+
+// ASR (Automatic Speech Recognition) model
+export * from './gs-asr-model';
+
+// File Operations model
+export * from './gs-file-model'; 
