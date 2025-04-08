@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useGsStore } from '@/store/gs-store/gs-store';
 import { GsModel } from '@/models';
 import { Button } from '@/components/ui/button';
@@ -34,6 +34,9 @@ export default function TrainPage() {
   // State for selected training model to view logs
   const [selectedTraining, setSelectedTraining] = useState<string | null>(null);
   const [isPollingLogs, setIsPollingLogs] = useState(false);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const selectedTrainingRef = useRef<string | null>(null);
+  const trainingLogsRef = useRef(trainingLogs);
 
   // Form state for SoVITS training
   const [sovitsForm, setSovitsForm] = useState<GsModel.GsSoVITSTrainingRequest>({
@@ -53,63 +56,114 @@ export default function TrainPage() {
   // Status message for user feedback
   const [statusMessage, setStatusMessage] = useState('');
 
+  // Keep refs updated with latest state
+  useEffect(() => {
+    selectedTrainingRef.current = selectedTraining;
+  }, [selectedTraining]);
+
+  useEffect(() => {
+    trainingLogsRef.current = trainingLogs;
+  }, [trainingLogs]);
+
   // Load available models on page load
   useEffect(() => {
     fetchAvailableModels();
   }, [fetchAvailableModels]);
 
-  // Poll logs when a training is selected
+  // Set up polling for logs
   useEffect(() => {
-    if (!selectedTraining || isPollingLogs) return;
+    // Clean up previous interval if exists
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
 
+    if (!selectedTraining) return;
+
+    // Parse training key into component parts
     const [experimentName, processType, version] = selectedTraining.split('_');
     if (!experimentName || !processType) return;
-    
-    const logKey = selectedTraining;
-    const logState = trainingLogs[logKey];
-    
-    // Set up polling
+
+    console.log("Setting up log polling for:", { experimentName, processType, version });
+
+    // Set polling flag
     setIsPollingLogs(true);
+
+    // Check if logs are already loaded
+    const logKey = selectedTraining;
+    const logState = trainingLogsRef.current[logKey];
     
-    // Fetch initial logs if not already loaded
+    console.log("Current log state:", logState);
+    
+    // Fetch initial logs if not loaded already
     if (!logState || logState.stdout.length === 0) {
+      console.log("Fetching initial logs");
       fetchTrainingLogs({
         experimentName,
-        processType: processType as 'sovits' | 'gpt',
+        processType: processType.toLowerCase() as 'sovits' | 'gpt',
         logType: 'stdout',
         version: version as "v1" | "v2" | "v3",
         offset: 0
       });
     }
-    
-    // Set up interval for polling
-    const pollingInterval = setInterval(() => {
-      const currentLogState = trainingLogs[logKey];
+
+    // Start polling interval
+    pollingIntervalRef.current = setInterval(() => {
+      console.log("Polling log interval fired");
       
+      // Get current selected training from ref to avoid stale closures
+      const currentSelectedTraining = selectedTrainingRef.current;
+      console.log("Current selected training:", currentSelectedTraining);
+      
+      if (!currentSelectedTraining) {
+        console.log("No training selected, skipping log poll");
+        return;
+      }
+
+      // Parse training key again to ensure we have the latest
+      const [expName, procType, ver] = currentSelectedTraining.split('_');
+      console.log("Training key components:", { expName, procType, ver });
+      
+      // Get current log state from ref to avoid dependency on trainingLogs
+      const currentLogState = trainingLogsRef.current[currentSelectedTraining];
+      console.log("Current log state:", currentLogState);
+      
+      if (!currentLogState) {
+        console.log("No log state found, skipping poll");
+        return;
+      }
+
       // Fetch stdout logs
+      console.log("Fetching stdout logs with offset:", currentLogState.stdoutNextOffset || 0);
       fetchTrainingLogs({
-        experimentName,
-        processType: processType as 'sovits' | 'gpt',
+        experimentName: expName,
+        processType: procType.toLowerCase() as 'sovits' | 'gpt',
         logType: 'stdout',
-        version: version as "v1" | "v2" | "v3",
-        offset: currentLogState?.stdoutNextOffset || 0
+        version: ver as "v1" | "v2" | "v3",
+        offset: currentLogState.stdoutNextOffset || 0
       });
       
       // Fetch stderr logs
+      console.log("Fetching stderr logs with offset:", currentLogState.stderrNextOffset || 0);
       fetchTrainingLogs({
-        experimentName,
-        processType: processType as 'sovits' | 'gpt',
+        experimentName: expName,
+        processType: procType.toLowerCase() as 'sovits' | 'gpt',
         logType: 'stderr',
-        version: version as "v1" | "v2" | "v3",
-        offset: currentLogState?.stderrNextOffset || 0
+        version: ver as "v1" | "v2" | "v3",
+        offset: currentLogState.stderrNextOffset || 0
       });
     }, 5000); // Poll every 5 seconds
-    
+
+    // Clean up
     return () => {
-      clearInterval(pollingInterval);
+      console.log("Cleaning up log polling interval");
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
       setIsPollingLogs(false);
     };
-  }, [selectedTraining, trainingLogs, fetchTrainingLogs, isPollingLogs]);
+  }, [selectedTraining, fetchTrainingLogs]); // Remove trainingLogs from dependency array
 
   // Handle SoVITS form submit
   const handleSovitsSubmit = async (e: React.FormEvent) => {
@@ -122,7 +176,7 @@ export default function TrainPage() {
       if (response.success) {
         setStatusMessage(`SoVITS training started for experiment "${sovitsForm.experimentName}"`);
         
-        // Select the new training to view logs
+        // Select the new training to view logs - ensure process type is lowercase
         setSelectedTraining(`${sovitsForm.experimentName}_sovits_${sovitsForm.version || 'v2'}`);
       } else {
         setStatusMessage(`Error starting SoVITS training: ${response.error || response.message}`);
@@ -143,7 +197,7 @@ export default function TrainPage() {
       if (response.success) {
         setStatusMessage(`GPT training started for experiment "${gptForm.experimentName}"`);
         
-        // Select the new training to view logs
+        // Select the new training to view logs - ensure process type is lowercase
         setSelectedTraining(`${gptForm.experimentName}_gpt_${gptForm.version || 'v2'}`);
       } else {
         setStatusMessage(`Error starting GPT training: ${response.error || response.message}`);
@@ -316,7 +370,7 @@ export default function TrainPage() {
                       <Switch
                         id="ifSaveLatest"
                         checked={sovitsForm.ifSaveLatest}
-                        onCheckedChange={(checked) => setSovitsForm({...sovitsForm, ifSaveLatest: checked})}
+                        onCheckedChange={(checked: boolean) => setSovitsForm({...sovitsForm, ifSaveLatest: checked})}
                       />
                       <Label htmlFor="ifSaveLatest">Save Latest Checkpoint</Label>
                     </div>
@@ -325,7 +379,7 @@ export default function TrainPage() {
                       <Switch
                         id="ifSaveEveryWeights"
                         checked={sovitsForm.ifSaveEveryWeights}
-                        onCheckedChange={(checked) => setSovitsForm({...sovitsForm, ifSaveEveryWeights: checked})}
+                        onCheckedChange={(checked: boolean) => setSovitsForm({...sovitsForm, ifSaveEveryWeights: checked})}
                       />
                       <Label htmlFor="ifSaveEveryWeights">Save Every Weights</Label>
                     </div>
@@ -462,7 +516,7 @@ export default function TrainPage() {
                       <Switch
                         id="gptIfSaveLatest"
                         checked={gptForm.ifSaveLatest}
-                        onCheckedChange={(checked) => setGptForm({...gptForm, ifSaveLatest: checked})}
+                        onCheckedChange={(checked: boolean) => setGptForm({...gptForm, ifSaveLatest: checked})}
                       />
                       <Label htmlFor="gptIfSaveLatest">Save Latest Checkpoint</Label>
                     </div>
@@ -471,7 +525,7 @@ export default function TrainPage() {
                       <Switch
                         id="gptIfSaveEveryWeights"
                         checked={gptForm.ifSaveEveryWeights}
-                        onCheckedChange={(checked) => setGptForm({...gptForm, ifSaveEveryWeights: checked})}
+                        onCheckedChange={(checked: boolean) => setGptForm({...gptForm, ifSaveEveryWeights: checked})}
                       />
                       <Label htmlFor="gptIfSaveEveryWeights">Save Every Weights</Label>
                     </div>
@@ -480,7 +534,7 @@ export default function TrainPage() {
                       <Switch
                         id="gptIfDpo"
                         checked={gptForm.ifDpo}
-                        onCheckedChange={(checked) => setGptForm({...gptForm, ifDpo: checked})}
+                        onCheckedChange={(checked: boolean) => setGptForm({...gptForm, ifDpo: checked})}
                       />
                       <Label htmlFor="gptIfDpo">Enable DPO Training</Label>
                     </div>
@@ -518,7 +572,8 @@ export default function TrainPage() {
                   {activeTrainings
                     .sort((a, b) => b.startTime - a.startTime)
                     .map((training) => {
-                      const trainingKey = `${training.experimentName}_${training.processType}_${training.version}`;
+                      // Ensure process type is lowercase for the key
+                      const trainingKey = `${training.experimentName}_${training.processType.toLowerCase()}_${training.version}`;
                       return (
                         <div 
                           key={trainingKey}
@@ -549,9 +604,10 @@ export default function TrainPage() {
                                 size="sm"
                                 onClick={(e) => {
                                   e.stopPropagation();
+                                  // Ensure process type is lowercase when removing
                                   removeActiveTraining(
                                     training.experimentName,
-                                    training.processType,
+                                    training.processType.toLowerCase() as 'sovits' | 'gpt',
                                     training.version
                                   );
                                 }}

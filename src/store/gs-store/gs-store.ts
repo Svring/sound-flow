@@ -822,8 +822,17 @@ export const useGsStore = create<GsState>()(
       fetchTrainingLogs: async (request) => {
         const { apiEndpoint } = get();
         
+        console.log("Store: fetchTrainingLogs called with request:", request);
+        
+        // Ensure processType is lowercase
+        const normalizedRequest = {
+          ...request,
+          processType: request.processType.toLowerCase() as 'sovits' | 'gpt'
+        };
+        
         // Generate key for this training's logs
-        const logKey = `${request.experimentName}_${request.processType}_${request.version || 'v2'}`;
+        const logKey = `${normalizedRequest.experimentName}_${normalizedRequest.processType}_${normalizedRequest.version || 'v2'}`;
+        console.log("Store: Using log key:", logKey);
         
         // Update loading state for this log entry
         set((state) => ({
@@ -844,22 +853,28 @@ export const useGsStore = create<GsState>()(
         try {
           // Set the API endpoint in the training service
           trainingService.setApiEndpoint(apiEndpoint);
+          console.log("Store: Set API endpoint to:", apiEndpoint);
           
           // Use the next offset from the store if available
           const logState = get().trainingLogs[logKey];
+          console.log("Store: Current log state for key:", logState);
           
           if (logState) {
-            if (request.logType === 'stderr') {
-              request.offset = logState.stderrNextOffset;
+            if (normalizedRequest.logType === 'stderr') {
+              normalizedRequest.offset = logState.stderrNextOffset;
             } else {
-              request.offset = logState.stdoutNextOffset;
+              normalizedRequest.offset = logState.stdoutNextOffset;
             }
           }
           
+          console.log("Store: Calling training service with:", normalizedRequest);
+          
           // Call the training service
-          const response = await trainingService.fetchTrainingLogs(request);
+          const response = await trainingService.fetchTrainingLogs(normalizedRequest);
+          console.log("Store: Got response from training service:", response);
           
           if (response.success) {
+            console.log("Store: Successfully fetched logs, updating state");
             // Update the appropriate log array
             set((state) => {
               const currentLogState = state.trainingLogs[logKey] || {
@@ -870,7 +885,7 @@ export const useGsStore = create<GsState>()(
                 isLoading: false
               };
               
-              if (request.logType === 'stderr') {
+              if (normalizedRequest.logType === 'stderr') {
                 return {
                   trainingLogs: {
                     ...state.trainingLogs,
@@ -897,6 +912,7 @@ export const useGsStore = create<GsState>()(
               }
             });
           } else {
+            console.log("Store: Error fetching logs:", response.error);
             // Update loading state even on error
             set((state) => ({
               trainingLogs: {
@@ -911,6 +927,7 @@ export const useGsStore = create<GsState>()(
             console.error('Error fetching training logs:', response.error);
           }
         } catch (error) {
+          console.error("Store: Exception in fetchTrainingLogs:", error);
           // Update loading state on error
           set((state) => ({
             trainingLogs: {
@@ -927,7 +944,9 @@ export const useGsStore = create<GsState>()(
       },
       
       clearTrainingLogs: (experimentName, processType, version) => {
-        const logKey = `${experimentName}_${processType}_${version || 'v2'}`;
+        // Ensure processType is lowercase
+        const normalizedProcessType = processType.toLowerCase() as 'sovits' | 'gpt';
+        const logKey = `${experimentName}_${normalizedProcessType}_${version || 'v2'}`;
         
         set((state) => {
           const { [logKey]: _, ...restLogs } = state.trainingLogs;
@@ -938,17 +957,20 @@ export const useGsStore = create<GsState>()(
       },
       
       removeActiveTraining: (experimentName, processType, version) => {
+        // Ensure processType is lowercase
+        const normalizedProcessType = processType.toLowerCase() as 'sovits' | 'gpt';
+        
         set((state) => ({
           activeTrainings: state.activeTrainings.filter(
             training => 
               !(training.experimentName === experimentName && 
-                training.processType === processType &&
+                training.processType === normalizedProcessType &&
                 training.version === version)
           )
         }));
         
         // Also clear the logs
-        get().clearTrainingLogs(experimentName, processType, version);
+        get().clearTrainingLogs(experimentName, normalizedProcessType, version);
       }
     }),
     {

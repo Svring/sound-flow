@@ -49,8 +49,10 @@ export class GsTrainingService {
       const response = await fetch(`${this.apiEndpoint}/train_sovits`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
         },
+        credentials: 'include',
         body: JSON.stringify(apiRequest)
       });
 
@@ -104,8 +106,10 @@ export class GsTrainingService {
       const response = await fetch(`${this.apiEndpoint}/train_gpt`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
         },
+        credentials: 'include',
         body: JSON.stringify(apiRequest)
       });
 
@@ -141,27 +145,49 @@ export class GsTrainingService {
    * Fetch training logs
    */
   async fetchTrainingLogs(request: GsTrainingLogRequest): Promise<GsTrainingLogResponse> {
+    console.log("TrainingService: fetchTrainingLogs called with:", request);
     try {
+      // Ensure process_type is lowercase and valid
+      const processType = request.processType.toLowerCase();
+      console.log("TrainingService: Normalized process type:", processType);
+      
+      if (processType !== 'sovits' && processType !== 'gpt') {
+        console.error("TrainingService: Invalid process_type:", processType);
+        return {
+          success: false,
+          message: "Invalid process_type. Must be 'sovits' or 'gpt'.",
+          error: "Invalid process_type"
+        };
+      }
+      
       // Convert camelCase to snake_case for request parameters
       const apiRequest = {
         experiment_name: request.experimentName,
-        log_type: request.logType,
-        process_type: request.processType,
-        offset: request.offset,
-        max_lines: request.maxLines,
-        version: request.version,
+        log_type: request.logType || 'stdout',
+        process_type: processType, // Use normalized value
+        offset: request.offset || 0,
+        max_lines: request.maxLines || 100,
+        version: request.version || 'v2',
       };
+      
+      console.log("TrainingService: Sending API request:", apiRequest);
+      console.log("TrainingService: API endpoint:", this.apiEndpoint);
 
       const response = await fetch(`${this.apiEndpoint}/training_logs`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
         },
+        credentials: 'include',
         body: JSON.stringify(apiRequest)
       });
+      
+      console.log("TrainingService: Got response status:", response.status);
 
       if (!response.ok) {
         const errorData = await response.json();
+        console.error("TrainingService: Error response:", errorData);
         return {
           success: false,
           message: errorData.message || 'Failed to fetch training logs',
@@ -170,6 +196,7 @@ export class GsTrainingService {
       }
 
       const data = await response.json();
+      console.log("TrainingService: Success response:", data);
       return {
         success: true,
         experimentName: data.experiment_name,
@@ -180,6 +207,7 @@ export class GsTrainingService {
         nextOffset: data.next_offset
       };
     } catch (error) {
+      console.error("TrainingService: Exception in fetchTrainingLogs:", error);
       return {
         success: false,
         message: 'Failed to fetch training logs',
