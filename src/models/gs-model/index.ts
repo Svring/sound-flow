@@ -25,4 +25,10 @@ export * from './gs-segment-audio-model';
 export * from './gs-asr-model';
 
 // File Operations model
-export * from './gs-file-model'; 
+export * from './gs-file-model';
+
+// Training model (SoVITS and GPT Training)
+export * from './gs-training-model';
+
+// Training service
+export * from './gs-training-service'; 

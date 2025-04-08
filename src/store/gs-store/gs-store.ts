@@ -2,8 +2,10 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { GsModel } from '@/models'
 import { GsFileModel } from '@/models/gs-model'
+import { GsTrainingService } from '@/models/gs-model/gs-training-service'
 
 const fileModel = new GsFileModel();
+const trainingService = new GsTrainingService();
 
 // Language options dictionary
 const languageOptions = {
@@ -57,6 +59,11 @@ interface GsState {
   currentDirectory: string
   loadingFiles: boolean
   
+  // Training state
+  activeTrainings: GsModel.GsActiveTraining[]
+  trainingLogs: Record<string, GsModel.GsTrainingLogState>
+  isStartingTraining: boolean
+  
   // Methods
   setApiEndpoint: (endpoint: string) => void
   setConnectionStatus: (status: GsState['connectionStatus'], error?: string) => void
@@ -103,6 +110,13 @@ interface GsState {
   deleteFile: (filePath: string) => Promise<GsModel.GsDeleteFileResponse>
   createFolder: (path: string) => Promise<void>
   createFile: (path: string, content?: string) => Promise<void>
+  
+  // Training API methods
+  startSoVITSTraining: (request: GsModel.GsSoVITSTrainingRequest) => Promise<GsModel.GsTrainingStartResponse>
+  startGPTTraining: (request: GsModel.GsGPTTrainingRequest) => Promise<GsModel.GsTrainingStartResponse>
+  fetchTrainingLogs: (request: GsModel.GsTrainingLogRequest) => Promise<void>
+  clearTrainingLogs: (experimentName: string, processType: 'sovits' | 'gpt', version: string) => void
+  removeActiveTraining: (experimentName: string, processType: 'sovits' | 'gpt', version: string) => void
 }
 
 export const useGsStore = create<GsState>()(
@@ -144,8 +158,17 @@ export const useGsStore = create<GsState>()(
       currentDirectory: '',
       loadingFiles: false,
       
+      // Training state
+      activeTrainings: [],
+      trainingLogs: {},
+      isStartingTraining: false,
+      
       // Methods
-      setApiEndpoint: (endpoint) => set({ apiEndpoint: endpoint }),
+      setApiEndpoint: (endpoint) => {
+        set({ apiEndpoint: endpoint });
+        trainingService.setApiEndpoint(endpoint);
+      },
+      
       setConnectionStatus: (status, error?: string) => set({ 
         connectionStatus: status, 
         isConnected: status === 'connected',
@@ -675,6 +698,257 @@ export const useGsStore = create<GsState>()(
           console.error('Error creating file:', error);
           throw error;
         }
+      },
+      
+      // Training API methods
+      startSoVITSTraining: async (request) => {
+        const { apiEndpoint } = get();
+        set({ isStartingTraining: true });
+        
+        try {
+          // Set the API endpoint in the training service
+          trainingService.setApiEndpoint(apiEndpoint);
+          
+          // Call the training service
+          const response = await trainingService.startSoVITSTraining(request);
+          
+          if (response.success) {
+            // Add to active trainings
+            set((state) => ({
+              activeTrainings: [
+                ...state.activeTrainings,
+                {
+                  experimentName: request.experimentName,
+                  processType: 'sovits',
+                  version: request.version || 'v2',
+                  status: 'running',
+                  processId: response.processId,
+                  logPaths: {
+                    stdout: response.stdoutLog,
+                    stderr: response.stderrLog
+                  },
+                  startTime: Date.now()
+                }
+              ]
+            }));
+            
+            // Initialize log state
+            const logKey = `${request.experimentName}_sovits_${request.version || 'v2'}`;
+            set((state) => ({
+              trainingLogs: {
+                ...state.trainingLogs,
+                [logKey]: {
+                  stdout: [],
+                  stderr: [],
+                  stdoutNextOffset: 0,
+                  stderrNextOffset: 0,
+                  isLoading: false
+                }
+              }
+            }));
+          }
+          
+          set({ isStartingTraining: false });
+          return response;
+        } catch (error) {
+          set({ isStartingTraining: false });
+          return {
+            success: false,
+            message: 'Failed to start SoVITS training',
+            error: error instanceof Error ? error.message : 'Unknown error'
+          };
+        }
+      },
+      
+      startGPTTraining: async (request) => {
+        const { apiEndpoint } = get();
+        set({ isStartingTraining: true });
+        
+        try {
+          // Set the API endpoint in the training service
+          trainingService.setApiEndpoint(apiEndpoint);
+          
+          // Call the training service
+          const response = await trainingService.startGPTTraining(request);
+          
+          if (response.success) {
+            // Add to active trainings
+            set((state) => ({
+              activeTrainings: [
+                ...state.activeTrainings,
+                {
+                  experimentName: request.experimentName,
+                  processType: 'gpt',
+                  version: request.version || 'v2',
+                  status: 'running',
+                  processId: response.processId,
+                  logPaths: {
+                    stdout: response.stdoutLog,
+                    stderr: response.stderrLog
+                  },
+                  startTime: Date.now()
+                }
+              ]
+            }));
+            
+            // Initialize log state
+            const logKey = `${request.experimentName}_gpt_${request.version || 'v2'}`;
+            set((state) => ({
+              trainingLogs: {
+                ...state.trainingLogs,
+                [logKey]: {
+                  stdout: [],
+                  stderr: [],
+                  stdoutNextOffset: 0,
+                  stderrNextOffset: 0,
+                  isLoading: false
+                }
+              }
+            }));
+          }
+          
+          set({ isStartingTraining: false });
+          return response;
+        } catch (error) {
+          set({ isStartingTraining: false });
+          return {
+            success: false,
+            message: 'Failed to start GPT training',
+            error: error instanceof Error ? error.message : 'Unknown error'
+          };
+        }
+      },
+      
+      fetchTrainingLogs: async (request) => {
+        const { apiEndpoint } = get();
+        
+        // Generate key for this training's logs
+        const logKey = `${request.experimentName}_${request.processType}_${request.version || 'v2'}`;
+        
+        // Update loading state for this log entry
+        set((state) => ({
+          trainingLogs: {
+            ...state.trainingLogs,
+            [logKey]: {
+              ...state.trainingLogs[logKey] || {
+                stdout: [],
+                stderr: [],
+                stdoutNextOffset: 0,
+                stderrNextOffset: 0,
+              },
+              isLoading: true
+            }
+          }
+        }));
+        
+        try {
+          // Set the API endpoint in the training service
+          trainingService.setApiEndpoint(apiEndpoint);
+          
+          // Use the next offset from the store if available
+          const logState = get().trainingLogs[logKey];
+          
+          if (logState) {
+            if (request.logType === 'stderr') {
+              request.offset = logState.stderrNextOffset;
+            } else {
+              request.offset = logState.stdoutNextOffset;
+            }
+          }
+          
+          // Call the training service
+          const response = await trainingService.fetchTrainingLogs(request);
+          
+          if (response.success) {
+            // Update the appropriate log array
+            set((state) => {
+              const currentLogState = state.trainingLogs[logKey] || {
+                stdout: [],
+                stderr: [],
+                stdoutNextOffset: 0,
+                stderrNextOffset: 0,
+                isLoading: false
+              };
+              
+              if (request.logType === 'stderr') {
+                return {
+                  trainingLogs: {
+                    ...state.trainingLogs,
+                    [logKey]: {
+                      ...currentLogState,
+                      stderr: [...currentLogState.stderr, ...(response.logLines || [])],
+                      stderrNextOffset: response.nextOffset || currentLogState.stderrNextOffset,
+                      isLoading: false
+                    }
+                  }
+                };
+              } else {
+                return {
+                  trainingLogs: {
+                    ...state.trainingLogs,
+                    [logKey]: {
+                      ...currentLogState,
+                      stdout: [...currentLogState.stdout, ...(response.logLines || [])],
+                      stdoutNextOffset: response.nextOffset || currentLogState.stdoutNextOffset,
+                      isLoading: false
+                    }
+                  }
+                };
+              }
+            });
+          } else {
+            // Update loading state even on error
+            set((state) => ({
+              trainingLogs: {
+                ...state.trainingLogs,
+                [logKey]: {
+                  ...state.trainingLogs[logKey],
+                  isLoading: false
+                }
+              }
+            }));
+            
+            console.error('Error fetching training logs:', response.error);
+          }
+        } catch (error) {
+          // Update loading state on error
+          set((state) => ({
+            trainingLogs: {
+              ...state.trainingLogs,
+              [logKey]: {
+                ...state.trainingLogs[logKey],
+                isLoading: false
+              }
+            }
+          }));
+          
+          console.error('Error fetching training logs:', error);
+        }
+      },
+      
+      clearTrainingLogs: (experimentName, processType, version) => {
+        const logKey = `${experimentName}_${processType}_${version || 'v2'}`;
+        
+        set((state) => {
+          const { [logKey]: _, ...restLogs } = state.trainingLogs;
+          return {
+            trainingLogs: restLogs
+          };
+        });
+      },
+      
+      removeActiveTraining: (experimentName, processType, version) => {
+        set((state) => ({
+          activeTrainings: state.activeTrainings.filter(
+            training => 
+              !(training.experimentName === experimentName && 
+                training.processType === processType &&
+                training.version === version)
+          )
+        }));
+        
+        // Also clear the logs
+        get().clearTrainingLogs(experimentName, processType, version);
       }
     }),
     {
@@ -688,7 +962,10 @@ export const useGsStore = create<GsState>()(
         currentSovitsWeight: state.currentSovitsWeight,
         currentReferenceAudio: state.currentReferenceAudio,
         recentRequests: state.recentRequests,
-        currentDirectory: state.currentDirectory
+        currentDirectory: state.currentDirectory,
+        // Persist active trainings state
+        activeTrainings: state.activeTrainings,
+        trainingLogs: state.trainingLogs
       })
     }
   )
